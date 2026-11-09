@@ -1,0 +1,14 @@
+name = "tricount-relay"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+[vars]
+# Comma-separated origins allowed to call the relay (your GitHub Pages site).
+ALLOWED_ORIGINS = "https://ycsin.github.io"
+
+# Per-IP rate limit: 30 requests per 60 seconds (period must be 10 or 60).
+# namespace_id is any number unique to this account.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 30, period = 60 }

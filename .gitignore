@@ -1,0 +1,8 @@
+registry.json
+probe.mjs
+dist/
+.env
+node_modules/
+.wrangler/
+worker/.env
+worker/.dev.vars

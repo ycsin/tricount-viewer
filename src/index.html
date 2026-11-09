@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tricount Viewer</title>
+<meta name="description" content="View a Tricount's expenses, balances and settle-up payments from its share link.">
+<style>
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --text: #16181d; --muted: #646b78; --border: #e3e6eb;
+  --accent: #2f6fde; --pos: #1f8a4c; --neg: #c4372f; --bar-pos: #3fae6c; --bar-neg: #e0675f;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111317; --surface: #1a1d23; --text: #e8eaee; --muted: #9aa1ad; --border: #2b2f37;
+    --accent: #6d9cf0; --pos: #5cc98a; --neg: #f07d75; --bar-pos: #3c9a63; --bar-neg: #c2554e;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111317; --surface: #1a1d23; --text: #e8eaee; --muted: #9aa1ad; --border: #2b2f37;
+  --accent: #6d9cf0; --pos: #5cc98a; --neg: #f07d75; --bar-pos: #3c9a63; --bar-neg: #c2554e;
+}
+* { box-sizing: border-box; }
+/* Keep the width steady when switching between long and short tabs (scrollbar appearing/disappearing). */
+html { scrollbar-gutter: stable; }
+/* At least a screen of room under the tabs, so switching tabs never has to move the tab bar. */
+.panels { min-height: 100vh; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0 0 20px; }
+form { display: flex; gap: 8px; flex-wrap: wrap; }
+input[type=text] { flex: 1 1 260px; min-width: 0; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--surface); color: var(--text); font: inherit; }
+button { padding: 10px 16px; border: 0; border-radius: var(--radius); background: var(--accent); color: #fff;
+  font: inherit; font-weight: 600; cursor: pointer; }
+button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--border); font-weight: 500; }
+button:disabled { opacity: .6; cursor: default; }
+.msg { margin: 16px 0; padding: 12px 14px; border-radius: var(--radius); background: var(--surface);
+  border: 1px solid var(--border); }
+.msg.err { border-color: var(--neg); color: var(--neg); }
+.hidden { display: none !important; }
+.head { margin: 28px 0 12px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.head h2 { margin: 0; font-size: 20px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.stat .k { color: var(--muted); font-size: 13px; }
+.stat .v { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; overflow-x: auto; }
+.tabs button { background: none; color: var(--muted); border-radius: 0; border-bottom: 2px solid transparent; padding: 10px 12px; font-weight: 500; }
+.tabs button[aria-selected=true] { color: var(--text); border-bottom-color: var(--accent); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 12px 14px; border-top: 1px solid var(--border); }
+.row:first-child { border-top: 0; }
+.row .desc { font-weight: 550; overflow-wrap: anywhere; }
+.row .amt { font-weight: 650; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.row .meta { color: var(--muted); font-size: 13px; grid-column: 1 / -1; overflow-wrap: anywhere; }
+.tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--border); color: var(--muted); margin-left: 6px; vertical-align: 1px; }
+.pos { color: var(--pos); } .neg { color: var(--neg); }
+.bal { display: grid; grid-template-columns: minmax(80px, 140px) 1fr auto; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--border); }
+.bal:first-child { border-top: 0; }
+.bal .name { overflow-wrap: anywhere; }
+.track { position: relative; height: 14px; }
+.track::before { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; border-left: 1px solid var(--border); }
+.bar { position: absolute; top: 0; height: 100%; border-radius: 3px; }
+.bal .v { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; }
+.filter { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.filter input, .filter select { flex: 1 1 180px; min-width: 0; padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+.range { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; margin-bottom: 12px; }
+.range label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 13px; flex: 1 1 140px; min-width: 0; }
+.range input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+  color: var(--text); font: inherit; min-width: 0; color-scheme: light dark; }
+.range button { padding: 8px 12px; }
+.note { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+.pager { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 10px; }
+.pager span { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.pager button { padding: 8px 12px; }
+footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tricount Viewer</h1>
+  <p class="sub">Paste a Tricount share link or its ID to see expenses, balances and who owes whom.</p>
+
+  <form id="f">
+    <input id="id" type="text" placeholder="https://tricount.com/tAbC… or tAbC…" autocomplete="off" spellcheck="false" aria-label="Tricount link or ID">
+    <button id="go" type="submit">View</button>
+  </form>
+  <div id="msg" class="msg hidden" role="status"></div>
+
+  <section id="out" class="hidden">
+    <div class="head">
+      <h2 id="title"></h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="ghost" id="csv" type="button">Download CSV</button>
+        <button class="ghost" id="raw" type="button">Raw JSON</button>
+      </div>
+    </div>
+    <div class="range">
+      <label>From<input id="from" type="date"></label>
+      <label>To<input id="to" type="date"></label>
+      <button class="ghost" id="clearRange" type="button">All dates</button>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="tx" aria-selected="true">Transactions</button>
+      <button role="tab" data-tab="bal" aria-selected="false">Balances</button>
+      <button role="tab" data-tab="settle" aria-selected="false">Settle up</button>
+    </div>
+    <div class="panels">
+    <div data-panel="tx">
+      <div class="filter">
+        <input id="q" type="search" placeholder="Search description" aria-label="Search">
+        <select id="who" aria-label="Filter by person"></select>
+      </div>
+      <div class="card" id="txlist"></div>
+      <div class="pager" id="pager">
+        <button class="ghost" id="prev" type="button">‹ Newer</button>
+        <span id="pageinfo"></span>
+        <button class="ghost" id="next" type="button">Older ›</button>
+      </div>
+    </div>
+    <div data-panel="bal" class="hidden"><p class="note rangeNote hidden">Balances cover all dates, not just the selected range.</p><div class="card" id="ballist"></div></div>
+    <div data-panel="settle" class="hidden"><p class="note rangeNote hidden">Settle-up covers all dates, not just the selected range.</p><div class="card" id="settlelist"></div></div>
+    </div>
+  </section>
+
+  <footer>Data is fetched live through a small relay and is not stored. Uses Tricount's unofficial API, which may change.</footer>
+</main>
+
+<script>
+// Filled in by build.mjs from the RELAY_URL environment variable; empty when unset.
+const RELAY_URL = '__RELAY_URL__';
+const RELAY_OK = /^https?:\/\//.test(RELAY_URL);
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let state = null;
+
+// ---------- parsing (tolerant of wrapper objects like {RegistryEntry:{...}}) ----------
+function unwrap(o) {
+  if (o && typeof o === 'object' && !Array.isArray(o)) {
+    const keys = Object.keys(o);
+    if (keys.length === 1 && /^[A-Z]/.test(keys[0]) && o[keys[0]] && typeof o[keys[0]] === 'object') return o[keys[0]];
+  }
+  return o;
+}
+function memberOf(m) {
+  m = unwrap(m);
+  if (!m) return null;
+  const alias = unwrap(m.alias) || {};
+  const name = alias.display_name || m.display_name || alias.name || m.name || 'Unknown';
+  const key = String(m.uuid || m.id || name);
+  return { key, name };
+}
+const num = (a) => {
+  if (a == null) return 0;
+  if (typeof a === 'number') return a;
+  if (typeof a === 'string') return parseFloat(a) || 0;
+  return parseFloat(a.value) || 0;
+};
+function parseDate(s) {
+  if (!s) return null;
+  const d = new Date(String(s).replace(' ', 'T').replace(/(\.\d{3})\d+/, '$1'));
+  return isNaN(d) ? null : d;
+}
+
+function prettyCategory(c) {
+  if (!c || typeof c !== 'string' || c === 'UNCATEGORIZED') return '';
+  return c.charAt(0) + c.slice(1).toLowerCase().replace(/_/g, ' ');
+}
+
+function normalize(reg) {
+  const currency = reg.currency || unwrap(reg.amount)?.currency || 'EUR';
+  const members = new Map();
+  for (const m of reg.memberships || []) { const p = memberOf(m); if (p) members.set(p.key, p); }
+  const rawEntries = reg.all_registry_entry || reg.registry_entry || reg.entries || [];
+  let entries = rawEntries.map(unwrap).filter((e) => e && e.status !== 'DELETED').map((e) => {
+    const payer = memberOf(e.membership_owned);
+    if (payer && !members.has(payer.key)) members.set(payer.key, payer);
+    const allocations = (e.allocations || []).map(unwrap).map((a) => {
+      const m = memberOf(a.membership);
+      if (m && !members.has(m.key)) members.set(m.key, m);
+      return { member: m, amount: num(a.amount) };
+    }).filter((a) => a.member);
+    return {
+      id: e.id || e.uuid,
+      description: e.description || '',
+      amount: num(e.amount),
+      currency: unwrap(e.amount)?.currency || currency,
+      amountLocal: e.amount_local ? num(e.amount_local) : null,
+      date: parseDate(e.date || e.created),
+      type: String(e.type_transaction || e.type || 'NORMAL').toUpperCase(),
+      category: prettyCategory(e.category_custom || e.category),
+      payer, allocations,
+    };
+  });
+  // Expenses may be stored as negative numbers; detect the convention from the data.
+  const normal = entries.filter((e) => e.type === 'NORMAL' && e.amount !== 0);
+  const negatives = normal.filter((e) => e.amount < 0).length;
+  const sign = negatives > normal.length / 2 ? -1 : 1;
+  entries = entries.map((e) => ({ ...e, paid: sign * e.amount, allocations: e.allocations.map((a) => ({ ...a, share: sign * a.amount })) }));
+  entries.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
+  return { title: reg.title || reg.name || 'Tricount', emoji: reg.emoji || '', currency, members: [...members.values()], entries };
+}
+
+function balances(t) {
+  const bal = new Map(t.members.map((m) => [m.key, 0]));
+  const spent = new Map(t.members.map((m) => [m.key, 0]));
+  for (const e of t.entries) {
+    if (e.payer) bal.set(e.payer.key, (bal.get(e.payer.key) || 0) + e.paid);
+    for (const a of e.allocations) {
+      bal.set(a.member.key, (bal.get(a.member.key) || 0) - a.share);
+      if (e.type !== 'BALANCE') spent.set(a.member.key, (spent.get(a.member.key) || 0) + a.share);
+    }
+  }
+  return { bal, spent };
+}
+
+function settle(bal) {
+  const c = 100;
+  const debt = [], cred = [];
+  for (const [k, v] of bal) { const x = Math.round(v * c); if (x < 0) debt.push([k, -x]); else if (x > 0) cred.push([k, x]); }
+  debt.sort((a, b) => b[1] - a[1]); cred.sort((a, b) => b[1] - a[1]);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < debt.length && j < cred.length) {
+    const x = Math.min(debt[i][1], cred[j][1]);
+    out.push({ from: debt[i][0], to: cred[j][0], amount: x / c });
+    debt[i][1] -= x; cred[j][1] -= x;
+    if (!debt[i][1]) i++;
+    if (!cred[j][1]) j++;
+  }
+  return out;
+}
+
+// ---------- rendering ----------
+function fmt(v, cur) {
+  if (Math.abs(v) < 0.005) v = 0; // avoid "-£0.00"
+  try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur }).format(v); }
+  catch { return `${v.toFixed(2)} ${cur}`; }
+}
+const dfmt = (d) => d ? d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+// Local calendar date as YYYY-MM-DD (matches <input type=date> values).
+const dkey = (d) => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '';
+const PAGE_SIZE = 20;
+
+// Entries inside the selected date range (inclusive); undated entries only show with no range set.
+function inRange() {
+  const from = $('#from').value, to = $('#to').value;
+  if (!from && !to) return state.t.entries;
+  return state.t.entries.filter((e) => {
+    const k = dkey(e.date);
+    return k && (!from || k >= from) && (!to || k <= to);
+  });
+}
+
+// Totals and anything else that follows the date range.
+function renderRange() {
+  const t = state.t;
+  const list = inRange();
+  const ranged = !!($('#from').value || $('#to').value);
+  const total = list.filter((e) => e.type === 'NORMAL').reduce((s, e) => s + e.paid, 0);
+  const dates = list.map((e) => e.date).filter(Boolean);
+  const span = dates.length ? `${dfmt(new Date(Math.min(...dates)))} – ${dfmt(new Date(Math.max(...dates)))}` : '—';
+  $('#stats').innerHTML = [
+    ['Total spent', fmt(total, t.currency)],
+    ['Transactions', list.length],
+    ['Members', t.members.length],
+    ['Period', span],
+  ].map(([k, v]) => `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('');
+  document.querySelectorAll('.rangeNote').forEach((n) => n.classList.toggle('hidden', !ranged));
+  $('#clearRange').disabled = !ranged;
+  state.page = 0;
+  renderTx();
+}
+
+function render() {
+  const t = state.t;
+  const name = (k) => t.members.find((m) => m.key === k)?.name || '?';
+  const { bal, spent } = balances(t);
+  $('#title').textContent = `${t.emoji ? t.emoji + ' ' : ''}${t.title}`;
+
+  const who = $('#who');
+  if (who.dataset.for !== state.id) {
+    who.innerHTML = '<option value="">Everyone</option>' + t.members.map((m) => `<option value="${esc(m.key)}">${esc(m.name)}</option>`).join('');
+    who.dataset.for = state.id;
+    // New tricount: reset filters and bound the date pickers to its data.
+    const keys = t.entries.map((e) => dkey(e.date)).filter(Boolean).sort();
+    for (const el of [$('#from'), $('#to')]) { el.value = ''; el.min = keys[0] || ''; el.max = keys[keys.length - 1] || ''; }
+    $('#q').value = '';
+  }
+  renderRange();
+
+  const max = Math.max(1e-9, ...[...bal.values()].map(Math.abs));
+  $('#ballist').innerHTML = t.members.map((m) => {
+    const v = bal.get(m.key) || 0;
+    const w = Math.abs(v) / max * 50;
+    const bar = v >= 0
+      ? `<div class="bar" style="left:50%;width:${w}%;background:var(--bar-pos)"></div>`
+      : `<div class="bar" style="right:50%;width:${w}%;background:var(--bar-neg)"></div>`;
+    return `<div class="bal"><div class="name">${esc(m.name)}<div class="sub" style="margin:0;font-size:12px">spent ${esc(fmt(spent.get(m.key) || 0, t.currency))}</div></div>
+      <div class="track">${bar}</div><div class="v ${v >= 0 ? 'pos' : 'neg'}">${esc(fmt(v, t.currency))}</div></div>`;
+  }).join('') || '<div class="row"><div class="meta">No members.</div></div>';
+
+  const s = settle(bal);
+  $('#settlelist').innerHTML = s.length
+    ? s.map((x) => `<div class="row"><div class="desc">${esc(name(x.from))} → ${esc(name(x.to))}</div><div class="amt">${esc(fmt(x.amount, t.currency))}</div></div>`).join('')
+    : '<div class="row"><div class="desc">All settled up 🎉</div></div>';
+}
+
+// Entries matching the date range, search and person filters (what the list and CSV show).
+function filtered() {
+  const q = $('#q').value.trim().toLowerCase();
+  const who = $('#who').value;
+  return inRange().filter((e) =>
+    (!q || e.description.toLowerCase().includes(q)) &&
+    (!who || e.payer?.key === who || e.allocations.some((a) => a.member.key === who)));
+}
+
+function renderTx() {
+  const t = state.t;
+  const list = filtered();
+  const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  state.page = Math.min(Math.max(0, state.page || 0), pages - 1);
+  const start = state.page * PAGE_SIZE;
+  const shown = list.slice(start, start + PAGE_SIZE);
+  $('#pager').classList.toggle('hidden', list.length <= PAGE_SIZE);
+  $('#pageinfo').textContent = list.length ? `${start + 1}–${start + shown.length} of ${list.length}` : '';
+  $('#prev').disabled = state.page === 0;
+  $('#next').disabled = state.page >= pages - 1;
+  $('#txlist').innerHTML = shown.map((e) => {
+    const kind = e.type === 'BALANCE' ? 'transfer' : e.type === 'INCOME' ? 'income' : e.category;
+    const tag = kind ? `<span class="tag">${esc(kind)}</span>` : '';
+    const split = e.allocations.filter((a) => Math.abs(a.share) >= 0.005).map((a) => `${esc(a.member.name)} ${esc(fmt(a.share, e.currency))}`).join(', ');
+    const local = e.amountLocal != null && e.currency !== t.currency ? ` · ${esc(fmt(Math.abs(e.amountLocal), t.currency))}` : '';
+    return `<div class="row"><div class="desc">${esc(e.description || '(no description)')}${tag}</div>
+      <div class="amt">${esc(fmt(e.paid, e.currency))}</div>
+      <div class="meta">${esc(dfmt(e.date))} · paid by ${esc(e.payer?.name || '?')}${local}${split ? ' · ' + split : ''}</div></div>`;
+  }).join('') || '<div class="row"><div class="meta">No matching transactions.</div></div>';
+}
+
+// ---------- actions ----------
+function showMsg(text, err = false) { const m = $('#msg'); m.textContent = text; m.className = 'msg' + (err ? ' err' : ''); }
+function hideMsg() { $('#msg').className = 'msg hidden'; }
+
+function extractId(s) {
+  s = s.trim();
+  const m = s.match(/tricount\.com\/(?:[a-z]{2}\/)?(?:[^/?#]*\/)?([A-Za-z0-9]{6,64})(?:[/?#]|$)/i);
+  return m ? m[1] : s.replace(/[^A-Za-z0-9]/g, '');
+}
+
+async function load(id) {
+  if (!RELAY_OK) { showMsg('This copy has no relay configured. Deploy your own relay and set the RELAY_URL repository variable (see the README).', true); return; }
+  if (!/^[A-Za-z0-9]{6,64}$/.test(id)) { showMsg('That does not look like a Tricount link or ID.', true); return; }
+  $('#go').disabled = true;
+  showMsg('Loading…');
+  try {
+    const res = await fetch(`${RELAY_URL}/registry?id=${encodeURIComponent(id)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    state = { id, raw: data, t: normalize(data) };
+    history.replaceState(null, '', `#${id}`);
+    hideMsg();
+    $('#out').classList.remove('hidden');
+    render();
+  } catch (e) {
+    showMsg(`Could not load this Tricount: ${e.message}`, true);
+  } finally {
+    $('#go').disabled = false;
+  }
+}
+
+function download(name, type, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+$('#f').addEventListener('submit', (ev) => { ev.preventDefault(); load(extractId($('#id').value)); });
+const resetPage = () => { state.page = 0; renderTx(); };
+$('#q').addEventListener('input', resetPage);
+$('#who').addEventListener('change', resetPage);
+$('#from').addEventListener('change', renderRange);
+$('#to').addEventListener('change', renderRange);
+$('#clearRange').addEventListener('click', () => { $('#from').value = ''; $('#to').value = ''; renderRange(); });
+const turn = (d) => {
+  state.page += d;
+  renderTx();
+  const top = $('#txlist').getBoundingClientRect().top;
+  if (top < 0) $('.filter').scrollIntoView({ block: 'start' });
+};
+$('#prev').addEventListener('click', () => turn(-1));
+$('#next').addEventListener('click', () => turn(1));
+document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
+  const tabs = $('.tabs');
+  const before = tabs.getBoundingClientRect().top;
+  document.querySelectorAll('.tabs button').forEach((x) => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('[data-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== b.dataset.tab));
+  // Keep the tab bar where it was on screen; if it had scrolled out of view, bring it to the top.
+  window.scrollBy(0, tabs.getBoundingClientRect().top - Math.max(0, before));
+}));
+$('#raw').addEventListener('click', () => download(`tricount-${state.id}.json`, 'application/json', JSON.stringify(state.raw, null, 2)));
+$('#csv').addEventListener('click', () => {
+  const t = state.t;
+  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const head = ['Date', 'Description', 'Type', 'Paid by', 'Amount', 'Currency', ...t.members.map((m) => `Share: ${m.name}`)];
+  const rows = filtered().map((e) => [
+    dkey(e.date), e.description, e.type, e.payer?.name || '', e.paid.toFixed(2), e.currency,
+    ...t.members.map((m) => { const a = e.allocations.find((x) => x.member.key === m.key); return a ? a.share.toFixed(2) : ''; }),
+  ]);
+  download(`tricount-${state.id}.csv`, 'text/csv', [head, ...rows].map((r) => r.map(q).join(',')).join('\r\n'));
+});
+
+const initial = (location.hash.slice(1) || new URLSearchParams(location.search).get('id') || '').trim();
+if (initial) { $('#id').value = initial; load(extractId(initial)); }
+</script>
+</body>
+</html>
